@@ -3,13 +3,15 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>GTA Arcade - Co-op Edition</title>
+    <title>GTA Arcade - Co-op Fixed</title>
     <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Black+Ops+One&display=swap');
+        /* Eliminamos el import externo para evitar bloqueos si falla internet */
+        /* @import url('https://fonts.googleapis.com/css2?family=Black+Ops+One&display=swap'); */
         
         body { 
-            font-family: 'Black Ops One', monospace; 
+            font-family: 'Arial', sans-serif; /* Fuente segura por defecto */
+            font-weight: bold;
             user-select: none; margin: 0; overflow: hidden; 
             background-color: #1a1a1a; touch-action: none; 
         }
@@ -41,15 +43,10 @@
             color: #00ff00; font-size: 24px; text-shadow: 0 0 10px #00ff00; margin-bottom: 5px;
         }
 
-        #downedScreen {
-            display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(100, 0, 0, 0.4); z-index: 18; pointer-events: none;
-            display: flex; align-items: center; justify-content: center;
-        }
         #downedMessage {
-            display: none;
+            display: none; position: absolute; top: 40%; left: 0; width: 100%;
             color: white; font-size: 40px; text-align: center; text-shadow: 0 0 20px red;
-            animation: pulse 1s infinite;
+            animation: pulse 1s infinite; z-index: 18; pointer-events: none;
         }
 
         @keyframes pulse { 0% { transform: scale(1); } 50% { transform: scale(1.1); } 100% { transform: scale(1); } }
@@ -148,7 +145,7 @@
 
     <div id="mainMenu" class="screen-overlay">
         <h1>GTA Arcade</h1>
-        <h3 style="color: #ddd;">Co-op Edition</h3>
+        <h3 style="color: #ddd;">Co-op Edition v18</h3>
         <button id="btn-pc" class="mode-btn" onclick="selectModeAndStart('pc')">💻 JUGAR EN PC</button>
         <button id="btn-mobile" class="mode-btn" onclick="selectModeAndStart('mobile')">📱 JUGAR EN MÓVIL</button>
         <button class="mode-btn" style="border-color: #00ffff; color: #00ffff;" onclick="openOnlineMenu()">🌐 ONLINE CO-OP</button>
@@ -165,7 +162,7 @@
         <p id="statusMsg" style="color: yellow;"></p>
     </div>
 
-    <div id="credits">v18.0 Boss Sync + Revive - Hecho por Aguirre</div>
+    <div id="credits">v18.1 Fixed Syntax - Hecho por Aguirre</div>
 
     <div id="gameover" class="screen-overlay">
         <h1>BUSTED</h1>
@@ -180,23 +177,27 @@
 
         let mapWidth = 4000;
         let mapHeight = 4000;
-        let selectedMode = localStorage.getItem('gta_control_mode') || null;
+        // Protección para localStorage
+        let selectedMode = null;
+        try {
+            selectedMode = localStorage.getItem('gta_control_mode') || null;
+        } catch(e) { console.log("Storage not available"); }
 
         // --- LÓGICA ONLINE ---
         let peer = null;
         let conn = null;
         let isOnline = false;
-        let isHost = false; // Define quién controla a los Jefes
+        let isHost = false; 
         let myId = null;
 
         // Datos del Rival
-        let rival = { x: -1000, y: -1000, angle: 0, active: false, status: 'alive' }; // status: alive, downed, dead
+        let rival = { x: -1000, y: -1000, angle: 0, active: false, status: 'alive' }; 
         let rivalCops = [];
 
         // Sistema de Reanimación
         let reviveTimer = 0;
-        const REVIVE_TIME = 5; // Segundos para revivir
-        let isDowned = false; // Si YO estoy abatido
+        const REVIVE_TIME = 5; 
+        let isDowned = false; 
 
         function openOnlineMenu() {
             document.getElementById('mainMenu').style.display = 'none';
@@ -205,28 +206,31 @@
         }
 
         function initPeer() {
-            peer = new Peer();
-            peer.on('open', (id) => {
-                myId = id;
-                document.getElementById('myIdDisplay').innerText = id;
-                document.getElementById('statusMsg').innerText = "Esperando... (Si nadie se conecta, tú eres Host)";
-                isHost = true; // Por defecto soy Host hasta que yo me conecte a otro
-            });
+            try {
+                peer = new Peer();
+                peer.on('open', (id) => {
+                    myId = id;
+                    document.getElementById('myIdDisplay').innerText = id;
+                    document.getElementById('statusMsg').innerText = "Esperando... (Si nadie se conecta, tú eres Host)";
+                    isHost = true; 
+                });
 
-            peer.on('connection', (c) => {
-                // Alguien se conectó a mí -> YO SOY EL HOST
-                isHost = true;
-                setupConnection(c);
-            });
-            
-            peer.on('error', (err) => { document.getElementById('statusMsg').innerText = "Error: " + err.type; });
+                peer.on('connection', (c) => {
+                    isHost = true;
+                    setupConnection(c);
+                });
+                
+                peer.on('error', (err) => { document.getElementById('statusMsg').innerText = "Error: " + err.type; });
+            } catch(e) {
+                alert("Error cargando PeerJS. Revisa tu conexión.");
+            }
         }
 
         function connectToPeer() {
             let friendId = document.getElementById('friendIdInput').value.trim();
             if (!friendId) return alert("Ingresa el ID");
             document.getElementById('statusMsg').innerText = "Conectando...";
-            isHost = false; // Me estoy conectando a otro, así que soy CLIENTE
+            isHost = false; 
             let c = peer.connect(friendId);
             setupConnection(c);
         }
@@ -244,7 +248,6 @@
             });
 
             conn.on('data', (data) => {
-                // Sincronizar Rival
                 if (data.player) {
                     rival.x = data.player.x;
                     rival.y = data.player.y;
@@ -253,22 +256,18 @@
                     rival.status = data.playerStatus || 'alive';
                 }
                 
-                // Sincronizar Policías Fantasma
                 if (data.cops) rivalCops = data.cops;
 
-                // Sincronizar JEFE (Solo si NO soy Host)
                 if (!isHost && data.bossData) {
                     syncBossFromHost(data.bossData);
                 }
 
-                // Recibir daño al jefe (Si soy Host y el cliente disparó)
                 if (isHost && data.bossHit) {
                     applyBossDamage(data.bossHit);
                 }
 
-                // Señal de reanimación (Si estaba abatido y el otro sobrevivió)
                 if (data.reviveSignal) {
-                    performRevive(data.reviveSignal.score, data.reviveSignal.time);
+                    performRevive(data.reviveSignal.score);
                 }
             });
             
@@ -281,11 +280,14 @@
         let lastTime = 0;
         const FPS = 60; const INTERVAL = 1000 / FPS;
 
-        window.addEventListener('resize', () => { canvas.width = window.innerWidth; canvas.height = window.innerHeight; });
-        canvas.width = window.innerWidth; canvas.height = window.innerHeight;
+        function resize() { canvas.width = window.innerWidth; canvas.height = window.innerHeight; }
+        window.addEventListener('resize', resize);
+        resize();
 
         function selectModeAndStart(mode) {
-            selectedMode = mode; localStorage.setItem('gta_control_mode', mode); startGame();
+            selectedMode = mode; 
+            try { localStorage.setItem('gta_control_mode', mode); } catch(e){}
+            startGame();
         }
 
         function showWarning(text) {
@@ -297,8 +299,9 @@
         let camera = { x: 0, y: 0 };
         let mouseX = 0; let mouseY = 0;
         let stickData = { x: 0, y: 0, active: false };
-        let bossPowerupTimer = 0; 
-        let bestScore = localStorage.getItem('chaseHighscore') || 0;
+        
+        let bestScore = 0;
+        try { bestScore = localStorage.getItem('chaseHighscore') || 0; } catch(e){}
         document.getElementById('bestTime').innerText = (bestScore / 60).toFixed(1);
 
         const keys = { w: false, a: false, s: false, d: false, shift: false };
@@ -315,11 +318,10 @@
                 if (k === 'a' || k === 'arrowleft') keys.a = true;
                 if (k === 'd' || k === 'arrowright') keys.d = true;
                 
-                // TRUCOS
                 if (k.length === 1 && /[a-z]/.test(k)) {
                     cheatBuffer += k.toUpperCase();
                     if (cheatBuffer.length > 10) cheatBuffer = cheatBuffer.slice(-10);
-                    if (cheatBuffer.endsWith("BOSS") && isHost) forceBossSpawn(); // Solo Host spawnea jefes con trucos
+                    if (cheatBuffer.endsWith("BOSS") && isHost) forceBossSpawn(); 
                     if (cheatBuffer.endsWith("GUN")) { player.ammo = Infinity; updateHUD(); showCheat("BALAS INFINITAS"); }
                 }
             }
@@ -368,89 +370,182 @@
             if (safe) { mouseX = t.clientX; mouseY = t.clientY; player.shoot(); }
         });
 
-        // Clases
-        class Entity { constructor(x,y,c) { this.x=x; this.y=y; this.color=c; this.vx=0; this.vy=0; this.angle=-Math.PI/2; this.radius=15; } }
+        // --- CLASES DEFINIDAS EXPLÍCITAMENTE (Sin compresión para evitar errores) ---
+        class Entity {
+            constructor(x, y, color) {
+                this.x = x; this.y = y; this.color = color;
+                this.vx = 0; this.vy = 0; this.angle = -Math.PI / 2; this.radius = 15;
+            }
+        }
+
         class Player extends Entity {
-            constructor() { super(mapWidth/2, mapHeight/2, '#3388ff'); this.hasShield=false; this.boostTimer=0; this.ammo=0; this.immunityTimer=0; }
+            constructor() {
+                super(mapWidth / 2, mapHeight / 2, '#3388ff');
+                this.hasShield = false; this.boostTimer = 0; this.ammo = 0; this.immunityTimer = 0;
+            }
             shoot() {
                 if (this.ammo > 0 || this.ammo === Infinity) {
-                    if (this.ammo !== Infinity) this.ammo--; updateHUD();
-                    let dx = (mouseX+camera.x)-this.x; let dy = (mouseY+camera.y)-this.y;
-                    bullets.push(new Bullet(this.x, this.y, Math.atan2(dy, dx))); addShake(3);
+                    if (this.ammo !== Infinity) this.ammo--;
+                    updateHUD();
+                    let dx = (mouseX + camera.x) - this.x;
+                    let dy = (mouseY + camera.y) - this.y;
+                    let aimAngle = Math.atan2(dy, dx);
+                    bullets.push(new Bullet(this.x, this.y, aimAngle));
+                    addShake(3);
                 }
             }
             update() {
-                if (isDowned) { this.vx *= 0.8; this.vy *= 0.8; this.x += this.vx; this.y += this.vy; return; }
-                let turn = CONFIG.turnSpeed; let grip = CONFIG.grip; let intent = 0;
-                if ((selectedMode==='pc' && keys.shift) || (selectedMode==='mobile' && mobileDrift)) { turn *= 1.5; grip = CONFIG.driftGrip; }
-                
-                if (selectedMode==='mobile' && stickData.active) {
-                    intent=1; let ta = Math.atan2(stickData.y, stickData.x); let d = ta - this.angle;
-                    while(d < -Math.PI) d+=Math.PI*2; while(d > Math.PI) d-=Math.PI*2;
-                    if(Math.abs(d) < turn) this.angle = ta; else this.angle += Math.sign(d)*turn;
-                } else if (selectedMode==='pc') {
-                    if(keys.w) intent=1; if(keys.s) intent=-1;
-                    if(Math.abs(intent)>0 || Math.sqrt(this.vx*this.vx+this.vy*this.vy)>0.5) {
-                        if(keys.a) this.angle -= turn * (intent===-1?-1:1);
-                        if(keys.d) this.angle += turn * (intent===-1?-1:1);
+                if (isDowned) {
+                    this.vx *= 0.8; this.vy *= 0.8;
+                    this.x += this.vx; this.y += this.vy;
+                    return;
+                }
+                let turn = CONFIG.turnSpeed;
+                let grip = CONFIG.grip;
+                let intent = 0;
+
+                if ((selectedMode === 'pc' && keys.shift) || (selectedMode === 'mobile' && mobileDrift)) {
+                    turn *= 1.5;
+                    grip = CONFIG.driftGrip;
+                }
+
+                if (selectedMode === 'mobile' && stickData.active) {
+                    intent = 1;
+                    let targetAngle = Math.atan2(stickData.y, stickData.x);
+                    let diff = targetAngle - this.angle;
+                    while (diff < -Math.PI) diff += Math.PI * 2;
+                    while (diff > Math.PI) diff -= Math.PI * 2;
+                    if (Math.abs(diff) < turn) this.angle = targetAngle;
+                    else this.angle += Math.sign(diff) * turn;
+                } else if (selectedMode === 'pc') {
+                    if (keys.w) intent = 1;
+                    if (keys.s) intent = -1;
+                    if (Math.abs(intent) > 0 || Math.sqrt(this.vx * this.vx + this.vy * this.vy) > 0.5) {
+                        let dir = (intent === -1) ? -1 : 1;
+                        if (keys.a) this.angle -= turn * dir;
+                        if (keys.d) this.angle += turn * dir;
                     }
                 }
-                this.angle = Math.atan2(Math.sin(this.angle), Math.cos(this.angle)); // Normalize
-
-                let maxS = CONFIG.maxSpeed; if(this.boostTimer>0) { maxS*=1.8; this.boostTimer--; addParticle(this.x-Math.cos(this.angle)*18, this.y-Math.sin(this.angle)*18, '#ffaa00', 1.5); }
-                if(intent!==0) { this.vx += Math.cos(this.angle)*CONFIG.accel*intent; this.vy += Math.sin(this.angle)*CONFIG.accel*intent; }
                 
-                // Physics
-                let dx=Math.cos(this.angle), dy=Math.sin(this.angle), rx=-dy, ry=dx;
-                let fwd = this.vx*dx + this.vy*dy; let lat = (this.vx*rx + this.vy*ry) * (1-grip);
-                this.vx = fwd*dx + lat*rx; this.vy = fwd*dy + lat*ry;
+                // Normalizar ángulo
+                this.angle = Math.atan2(Math.sin(this.angle), Math.cos(this.angle));
+
+                let maxS = CONFIG.maxSpeed;
+                if (this.boostTimer > 0) {
+                    maxS *= 1.8;
+                    this.boostTimer--;
+                    addParticle(this.x - Math.cos(this.angle) * 18, this.y - Math.sin(this.angle) * 18, '#ffaa00', 1.5);
+                }
+
+                if (intent !== 0) {
+                    this.vx += Math.cos(this.angle) * CONFIG.accel * intent;
+                    this.vy += Math.sin(this.angle) * CONFIG.accel * intent;
+                }
+
+                // Físicas de derrape
+                let dirX = Math.cos(this.angle); let dirY = Math.sin(this.angle);
+                let rightX = -Math.sin(this.angle); let rightY = Math.cos(this.angle);
+                let forwardVelocity = (this.vx * dirX) + (this.vy * dirY);
+                let lateralVelocity = (this.vx * rightX) + (this.vy * rightY);
+                lateralVelocity *= (1.0 - grip);
+                this.vx = (forwardVelocity * dirX) + (lateralVelocity * rightX);
+                this.vy = (forwardVelocity * dirY) + (lateralVelocity * rightY);
                 this.vx *= CONFIG.friction; this.vy *= CONFIG.friction;
                 this.x += this.vx; this.y += this.vy;
 
-                if(this.x<0) this.x=0; if(this.x>mapWidth) this.x=mapWidth;
-                if(this.y<0) this.y=0; if(this.y>mapHeight) this.y=mapHeight;
-                if(this.immunityTimer>0) this.immunityTimer--;
+                if (this.x < 0) this.x = 0; if (this.x > mapWidth) this.x = mapWidth;
+                if (this.y < 0) this.y = 0; if (this.y > mapHeight) this.y = mapHeight;
+                if (this.immunityTimer > 0) this.immunityTimer--;
             }
         }
 
         class Bullet {
-            constructor(x,y,a) { this.x=x; this.y=y; this.vx=Math.cos(a)*20; this.vy=Math.sin(a)*20; this.life=60; this.dead=false; }
+            constructor(x, y, angle) {
+                this.x = x; this.y = y;
+                this.vx = Math.cos(angle) * 20; this.vy = Math.sin(angle) * 20;
+                this.life = 60; this.dead = false;
+            }
             update() {
-                let px=this.x; let py=this.y; this.x+=this.vx; this.y+=this.vy; this.life--;
-                laserTrails.push({x1:px, y1:py, x2:this.x, y2:this.y, alpha:1});
-                if(this.x<0||this.x>mapWidth||this.y<0||this.y>mapHeight) this.dead=true;
+                let prevX = this.x; let prevY = this.y;
+                this.x += this.vx; this.y += this.vy;
+                this.life--;
+                laserTrails.push({ x1: prevX, y1: prevY, x2: this.x, y2: this.y, alpha: 1 });
+                if (this.x < 0 || this.x > mapWidth || this.y < 0 || this.y > mapHeight) this.dead = true;
             }
         }
 
-        // --- BOSSES MODIFICADOS PARA ONLINE ---
-        class TankBoss extends Entity {
-            constructor() { super(0,0,'#2d5a27'); this.health=5; this.maxHealth=5; this.turretAngle=0; this.shootTimer=120; this.enraged=false; this.radius=40; this.spawn(); }
+        class Police extends Entity {
+            constructor(type) {
+                super(0, 0, '#ff3333');
+                this.type = type;
+                this.spawn();
+                this.stunned = 0;
+                if(this.type === 'interceptor') { this.color='#33ccff'; }
+                if(this.type === 'heavy') { this.color='#222'; this.radius=20; }
+            }
             spawn() {
-                let a = Math.random()*Math.PI*2; this.x = player.x + Math.cos(a)*600; this.y = player.y + Math.sin(a)*600;
-                // Si soy cliente, el host me corregirá la posición inmediatamente
+                let angle = Math.random() * Math.PI * 2;
+                this.x = player.x + Math.cos(angle) * 1000;
+                this.y = player.y + Math.sin(angle) * 1000;
             }
             update() {
-                // Solo el HOST calcula la lógica del jefe
-                if (isOnline && !isHost) return; 
-
-                if (this.health <= 1 && !this.enraged) { this.enraged=true; this.color='#ff0000'; this.health=5; addShake(30); }
+                if (this.stunned > 0) { this.stunned--; return; }
+                let chaseX = player.x - this.x;
+                let chaseY = player.y - this.y;
+                let targetAngle = Math.atan2(chaseY, chaseX);
                 
-                // Perseguir al jugador más cercano
+                // Suavizado de giro
+                let diff = targetAngle - this.angle;
+                while (diff < -Math.PI) diff += Math.PI * 2; while (diff > Math.PI) diff -= Math.PI * 2;
+                this.angle += diff * 0.1;
+
+                let speed = 6;
+                if(this.type==='interceptor') speed=8;
+                if(this.type==='heavy') speed=4.5;
+                
+                this.x += Math.cos(this.angle) * speed;
+                this.y += Math.sin(this.angle) * speed;
+            }
+        }
+
+        class TankBoss extends Entity {
+            constructor() {
+                super(0, 0, '#2d5a27');
+                this.health = 5; this.maxHealth = 5;
+                this.turretAngle = 0; this.shootTimer = 120;
+                this.enraged = false; this.radius = 40;
+                this.spawn();
+            }
+            spawn() {
+                let angle = Math.random() * Math.PI * 2;
+                this.x = player.x + Math.cos(angle) * 600;
+                this.y = player.y + Math.sin(angle) * 600;
+            }
+            update() {
+                if (isOnline && !isHost) return; // Solo Host controla IA
+
+                if (this.health <= 1 && !this.enraged) {
+                    this.enraged = true; this.color = '#ff0000';
+                    this.health = 5; addShake(30);
+                }
+
                 let target = player;
                 if (isOnline && rival.active && rival.status === 'alive') {
                     let d1 = Math.hypot(player.x - this.x, player.y - this.y);
                     let d2 = Math.hypot(rival.x - this.x, rival.y - this.y);
-                    if (d2 < d1) target = rival; // El jefe persigue al rival si está más cerca
+                    if (d2 < d1) target = rival;
                 }
 
-                let dx = target.x - this.x; let dy = target.y - this.y;
-                let ta = Math.atan2(dy, dx);
-                this.angle += (ta - this.angle) * 0.02;
-                this.x += Math.cos(this.angle) * 1.5; this.y += Math.sin(this.angle) * 1.5;
-                this.turretAngle = ta;
-                
+                let dx = target.x - this.x;
+                let dy = target.y - this.y;
+                let targetAngle = Math.atan2(dy, dx);
+                this.angle += (targetAngle - this.angle) * 0.02;
+                this.x += Math.cos(this.angle) * 1.5;
+                this.y += Math.sin(this.angle) * 1.5;
+                this.turretAngle = targetAngle;
+
                 this.shootTimer--;
-                if(this.shootTimer<=0) {
+                if (this.shootTimer <= 0) {
                     this.shootTimer = this.enraged ? 60 : 180;
                     bossBullets.push(new TankBullet(this.x, this.y, this.turretAngle));
                     addShake(10);
@@ -462,26 +557,49 @@
                 ctx.fillStyle = '#00ff00'; ctx.fillRect(-30, -60, 60 * (this.health / this.maxHealth), 8);
                 ctx.strokeStyle = 'white'; ctx.strokeRect(-30, -60, 60, 8);
                 ctx.rotate(this.angle);
-                ctx.fillStyle = this.color; ctx.fillRect(-40,-25,80,50);
+                ctx.fillStyle = this.color; ctx.fillRect(-40, -25, 80, 50);
                 ctx.rotate(-this.angle + this.turretAngle);
-                ctx.fillStyle = this.enraged?'#8b0000':'#1e3c1a'; ctx.fillRect(-20,-20,40,40); ctx.fillRect(10,-5,60,10);
+                ctx.fillStyle = this.enraged ? '#8b0000' : '#1e3c1a';
+                ctx.fillRect(-20, -20, 40, 40); ctx.fillRect(10, -5, 60, 10);
                 ctx.restore();
             }
         }
-        class TankBullet { constructor(x,y,a) { this.x=x; this.y=y; this.vx=Math.cos(a)*8; this.vy=Math.sin(a)*8; this.life=300; this.radius=8; } update() { this.x+=this.vx; this.y+=this.vy; this.life--; } draw() { ctx.fillStyle='orange'; ctx.beginPath(); ctx.arc(this.x,this.y,this.radius,0,Math.PI*2); ctx.fill(); } }
+
+        class TankBullet {
+            constructor(x, y, angle) {
+                this.x = x; this.y = y;
+                this.vx = Math.cos(angle) * 8; this.vy = Math.sin(angle) * 8;
+                this.life = 300; this.radius = 8;
+            }
+            update() {
+                this.x += this.vx; this.y += this.vy; this.life--;
+            }
+            draw() {
+                ctx.fillStyle = 'orange'; ctx.beginPath(); ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2); ctx.fill();
+            }
+        }
 
         // --- SETUP ---
-        let player; let policeCars = []; let boss = null; let bossBullets = []; let obstacles = []; let powerups = []; let particles = []; let bullets = []; let laserTrails = [];
+        let player; let policeCars = []; let boss = null; let bossBullets = []; 
+        let obstacles = []; let powerups = []; let particles = []; let bullets = []; let laserTrails = [];
         
+        function startGame() {
+            document.getElementById('mainMenu').style.display = 'none';
+            resetGame();
+        }
+
         function resetGame() {
             gameState.over=false; gameState.running=true; gameState.score=0; gameState.starLevel=1;
             gameState.bossMode=false; isDowned=false;
-            player = new Player(); policeCars=[]; boss=null; bossBullets=[]; obstacles=[]; bullets=[]; powerups=[];
-            document.getElementById('ui').style.display = 'block'; document.getElementById('gameover').style.display='none';
-            document.getElementById('downedMessage').style.display = 'none'; document.getElementById('reviveUI').style.display='none';
             
-            // Generar mapa solo si no es online o si soy Host para evitar desincronización de edificios (básico)
-            // Para simplificar, generamos mapa localmente igual (misma seed sería ideal, pero random servirá por ahora)
+            player = new Player(); 
+            policeCars=[]; boss=null; bossBullets=[]; bullets=[]; powerups=[];
+            
+            document.getElementById('ui').style.display = 'block'; 
+            document.getElementById('gameover').style.display='none';
+            document.getElementById('downedMessage').style.display = 'none'; 
+            document.getElementById('reviveUI').style.display='none';
+            
             obstacles = [];
             for(let i=0; i<25; i++) {
                  let w=60+Math.random()*100; let h=60+Math.random()*100;
@@ -491,24 +609,21 @@
             
             policeCars.push(new Police('normal'));
             if(selectedMode==='mobile') document.getElementById('mobile-controls').style.display='block';
+            
             lastTime=0; requestAnimationFrame(loop);
         }
 
         // --- SINCRONIZACIÓN DE JEFE ---
         function syncBossFromHost(data) {
             if (!data.active) { boss = null; return; }
-            if (!boss) boss = new TankBoss(); // Crear si no existe
+            if (!boss) boss = new TankBoss(); 
             
-            // Interpolar posición para suavidad
             boss.x = boss.x * 0.7 + data.x * 0.3;
             boss.y = boss.y * 0.7 + data.y * 0.3;
             boss.angle = data.angle;
             boss.turretAngle = data.turretAngle;
             boss.health = data.health;
             boss.enraged = data.enraged;
-            
-            // Sincronizar balas del jefe (básico: solo si hay disparos nuevos)
-            // Para simplificar, el cliente calcula las balas del jefe localmente, o aceptamos desincronización visual menor
         }
 
         function applyBossDamage(amount) {
@@ -525,13 +640,14 @@
             document.getElementById('powerupsUI').innerHTML = h;
         }
 
+        let shouldSendRevive = false;
+
         // --- BUCLE PRINCIPAL ---
         function loop(timestamp) {
             if(!gameState.running || gameState.over) return;
             requestAnimationFrame(loop);
             let dt = (timestamp - lastTime); if (dt < INTERVAL) return; lastTime = timestamp - (dt % INTERVAL);
 
-            // CAMARA
             camera.x += (player.x - canvas.width/2 - camera.x) * 0.1;
             camera.y += (player.y - canvas.height/2 - camera.y) * 0.1;
 
@@ -545,7 +661,7 @@
             for(let y=0; y<mapHeight; y+=200) { ctx.moveTo(0,y); ctx.lineTo(mapWidth,y); }
             ctx.stroke(); ctx.strokeStyle='#000'; ctx.lineWidth=10; ctx.strokeRect(0,0,mapWidth,mapHeight);
 
-            // --- LÓGICA ONLINE: ENVIAR DATOS ---
+            // --- LÓGICA ONLINE ---
             if(isOnline && conn && conn.open) {
                 let packet = {
                     player: { x: Math.round(player.x), y: Math.round(player.y), angle: player.angle },
@@ -553,7 +669,6 @@
                     cops: policeCars.map(c => ({x:Math.round(c.x), y:Math.round(c.y), a:c.angle, t:c.type}))
                 };
 
-                // Si soy Host, envío datos del Jefe
                 if(isHost && boss) {
                     packet.bossData = {
                         active: true, x: Math.round(boss.x), y: Math.round(boss.y), 
@@ -561,32 +676,25 @@
                         health: boss.health, enraged: boss.enraged
                     };
                 } else if (isHost && !boss && gameState.bossMode) {
-                    // Jefe murió
                     packet.bossData = { active: false };
                 }
 
-                // Si he revivido a mi compa, envío la señal una vez
                 if (shouldSendRevive) {
-                    packet.reviveSignal = { score: gameState.score, time: Date.now() };
+                    packet.reviveSignal = { score: gameState.score };
                     shouldSendRevive = false;
                 }
-
                 conn.send(packet);
             }
 
             // --- REANIMACIÓN ---
             if (isOnline && rival.status === 'downed' && !isDowned) {
-                // Si el rival está caído y yo estoy vivo, cuento tiempo
-                reviveTimer += 1/60; // aprox 1 frame
-                
-                // Mostrar UI
+                reviveTimer += 1/60; 
                 let ui = document.getElementById('reviveUI');
                 ui.style.display = 'block';
                 document.getElementById('reviveBarFill').style.width = (reviveTimer / REVIVE_TIME * 100) + "%";
                 document.getElementById('reviveTimerText').innerText = (REVIVE_TIME - reviveTimer).toFixed(1);
 
                 if (reviveTimer >= REVIVE_TIME) {
-                    // ¡REVIVIR!
                     shouldSendRevive = true;
                     reviveTimer = 0;
                     ui.style.display = 'none';
@@ -599,7 +707,6 @@
 
             if(!isDowned) gameState.score++;
 
-            // SPAWN DEL JEFE (Solo Host controla el trigger)
             if (isHost || !isOnline) {
                 if(gameState.starLevel===5 && !boss && !gameState.bossMode) {
                     gameState.bossMode=true; showWarning("¡TANQUE!");
@@ -607,21 +714,15 @@
                 }
             }
 
-            // LOGICA JEFE
             if(boss) {
-                boss.update(); // Si soy cliente, update() retorna vacio, asi que solo dibuja
+                boss.update(); 
                 boss.draw();
-                
-                // Colision Jugador vs Jefe
                 if(Math.hypot(player.x-boss.x, player.y-boss.y) < 50) hitPlayer();
-                
-                // Muerte Jefe
                 if (isHost && boss.health <= 0) {
                     addShake(50); boss=null; gameState.bossMode=false; gameState.starLevel=6;
                 }
             }
 
-            // BALAS JEFE
             for(let i=bossBullets.length-1; i>=0; i--) {
                 let b=bossBullets[i]; b.update(); b.draw();
                 if(b.life<=0) bossBullets.splice(i,1);
@@ -634,16 +735,13 @@
             player.update();
             drawCar(player.x, player.y, player.angle, player.color, false, player.hasShield, 'player', isDowned);
 
-            // DIBUJAR RIVAL
             if(isOnline && rival.active) {
                 let rColor = rival.status === 'downed' ? '#555' : '#bd00ff';
                 drawCar(rival.x, rival.y, rival.angle, rColor, false, false, 'normal');
                 
-                // Texto RIVAL
                 ctx.save(); ctx.translate(rival.x, rival.y); ctx.fillStyle='white'; ctx.textAlign='center';
                 ctx.fillText(rival.status==='downed'?'🚑 AYUDA':'RIVAL', 0, -30); ctx.restore();
 
-                // Policías Fantasma
                 ctx.globalAlpha=0.5;
                 rivalCops.forEach(rc => {
                      let c='red'; if(rc.t==='interceptor') c='#33ccff'; if(rc.t==='heavy') c='#222';
@@ -652,9 +750,8 @@
                 ctx.globalAlpha=1;
             }
 
-            // POLICÍAS LOCALES
             if(!gameState.bossMode) {
-                let maxC = 1 + gameState.starLevel + (isOnline?1:0); // Más polis en coop
+                let maxC = 1 + gameState.starLevel + (isOnline?1:0); 
                 if(policeCars.length < maxC && Math.random()<0.02) policeCars.push(new Police('normal'));
             }
             policeCars.forEach((p,i) => {
@@ -666,16 +763,12 @@
                 }
             });
 
-            // BALAS
             for(let i=bullets.length-1; i>=0; i--) {
                 let b=bullets[i]; b.update();
-                // Colisión Bala vs Jefe
                 if(boss && Math.hypot(b.x-boss.x, b.y-boss.y) < 40) {
                     b.dead=true; 
-                    // Si soy HOST, daño directo. Si soy CLIENTE, envío señal.
                     if(isHost) boss.health--; 
                     else if(conn && conn.open) conn.send({bossHit: 1});
-                    
                     addParticle(b.x, b.y, '#fff', 5);
                 }
                 if(b.dead) bullets.splice(i,1);
@@ -688,19 +781,15 @@
             ctx.restore();
         }
 
-        let shouldSendRevive = false;
-
         function hitPlayer() {
             if (isDowned || player.immunityTimer > 0) return;
             
             if (isOnline) {
-                // EN ONLINE NO MUERES DIRECTO, CAES ABATIDO
                 isDowned = true;
-                player.color = '#555'; // Color gris muerto
+                player.color = '#555'; 
                 document.getElementById('downedMessage').style.display = 'block';
                 addShake(30);
                 
-                // Si ambos mueren, Game Over real (verificado por si el rival también está downed)
                 if (rival.status === 'downed' || rival.status === 'dead') {
                     setTimeout(gameOver, 1000);
                 }
@@ -709,13 +798,12 @@
             }
         }
 
-        function performRevive(score, timestamp) {
+        function performRevive(score) {
             isDowned = false;
             player.color = '#3388ff';
-            player.immunityTimer = 180; // 3 seg inmunidad
-            gameState.score = score; // Sincronizar puntos
+            player.immunityTimer = 180; 
+            gameState.score = score; 
             document.getElementById('downedMessage').style.display = 'none';
-            // Teletransportar cerca del amigo
             player.x = rival.x + 50; 
             player.y = rival.y + 50;
             showCheat("¡REANIMADO!");
@@ -726,10 +814,9 @@
             document.getElementById('ui').style.display='none';
             document.getElementById('gameover').style.display='block';
             document.getElementById('finalTime').innerText=Math.floor(gameState.score/60);
-            if(gameState.score>bestScore) localStorage.setItem('chaseHighscore', gameState.score);
+            try { if(gameState.score>bestScore) localStorage.setItem('chaseHighscore', gameState.score); } catch(e){}
         }
 
-        // Helpers
         function drawCar(x,y,a,c,isCop,sh,type,downed=false) {
             ctx.save(); ctx.translate(x,y); ctx.rotate(a);
             if(sh) { ctx.strokeStyle='#0f0'; ctx.beginPath(); ctx.arc(0,0,25,0,7); ctx.stroke(); }
@@ -741,8 +828,10 @@
         }
         function addShake(a) { gameState.cameraShake=a; }
         function addParticle(x,y,c,s) { particles.push({x:x,y:y,color:c,speed:s,angle:Math.random()*7,life:1}); }
-        class Police extends Entity { constructor(t) { super(0,0,'red'); this.type=t; this.spawn(); } spawn(){ let a=Math.random()*7; this.x=player.x+Math.cos(a)*1000; this.y=player.y+Math.sin(a)*1000; } update(){ if(this.stunned>0){this.stunned--;return;} let a=Math.atan2(player.y-this.y, player.x-this.x); this.angle+=(a-this.angle)*0.1; this.x+=Math.cos(this.angle)*6; this.y+=Math.sin(this.angle)*6; } }
 
+        // Inicialización segura del fondo para evitar el parpadeo gris
+        ctx.fillStyle = '#1a1a1a';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
     </script>
 </body>
 </html>
