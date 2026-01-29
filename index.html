@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>GTA Arcade - Online Edition</title>
+    <title>GTA Arcade - Co-op Edition</title>
     <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Black+Ops+One&display=swap');
@@ -64,6 +64,12 @@
             color: #ffff00; font-size: 24px; text-shadow: 0 0 10px orange; pointer-events: none; z-index: 13;
             width: 100%; text-align: center;
         }
+        
+        #reviveUI {
+            display: none; position: absolute; top: 40%; left: 50%; transform: translate(-50%, -50%);
+            color: #00ffff; font-size: 30px; text-shadow: 0 0 10px cyan; pointer-events: none; z-index: 14;
+            text-align: center; background: rgba(0,0,0,0.7); padding: 20px; border-radius: 10px; border: 2px solid #00ffff;
+        }
 
         @keyframes blink { 0% { opacity: 1; } 50% { opacity: 0; } 100% { opacity: 1; } }
 
@@ -75,6 +81,14 @@
         .info-title { color: #ff3333; font-size: 18px; margin-bottom: 10px; border-bottom: 2px solid #333; padding-bottom: 5px; }
         .info-item { margin-bottom: 8px; font-size: 14px; color: #ddd; display: flex; align-items: center; }
         
+        /* INPUTS */
+        input[type="text"] {
+            background: #333; border: 2px solid #555; color: white; padding: 10px; 
+            font-family: inherit; font-size: 18px; width: 60%; text-align: center;
+            margin-bottom: 15px; text-transform: uppercase;
+        }
+        input[type="text"]:focus { outline: none; border-color: #00ffff; }
+
         /* BOTONES */
         button { 
             background: #ff3333; color: white;
@@ -124,7 +138,7 @@
         .drift-btn {
             position: absolute; bottom: 40px; right: 40px;
             width: 90px; height: 90px;
-            background: rgba(255, 204, 0, 0.2); /* Amarillo translúcido */
+            background: rgba(255, 204, 0, 0.2);
             border: 2px solid rgba(255, 204, 0, 0.6);
             border-radius: 50%;
             pointer-events: auto;
@@ -151,8 +165,6 @@
         }
 
         #start-btn { display: none; } 
-        #instructions-pc { display: none; }
-        #instructions-mobile { display: none; }
     </style>
 </head>
 <body>
@@ -170,6 +182,12 @@
     <div id="bossWarning">¡ALERTA DE TANQUE!</div>
     <div id="cheatActivated">TRUCO ACTIVADO</div>
 
+    <div id="reviveUI">
+        HAZ MUERTO<br>
+        <span style="font-size: 16px; color: white;">REVIVIENDO EN:</span><br>
+        <span id="reviveTimerDisplay" style="font-size: 50px; color: yellow;">10</span>
+    </div>
+
     <div id="mobile-controls">
         <div class="joystick-zone" id="joystick">
             <div class="joystick-knob" id="knob"></div>
@@ -184,6 +202,8 @@
         <h1>GTA Arcade</h1>
         <h3 style="color: #ddd; margin-top: -10px; margin-bottom: 20px; font-size: 20px;">Hecho por Aguirre</h3>
         
+        <input type="text" id="nicknameInput" placeholder="TU NICKNAME" maxlength="10">
+
         <p style="color:#aaa; font-size:18px; margin-bottom: 30px;">ELIGE TU MODO PARA COMENZAR:</p>
         
         <button id="btn-pc" class="mode-btn" onclick="selectModeAndStart('pc')">
@@ -197,7 +217,7 @@
         </button>
 
         <button class="mode-btn" style="border-color: #00ffff; color: #00ffff;" onclick="openOnlineMenu()">
-            🌐 JUGAR ONLINE (BETA)
+            🌐 JUGAR CO-OP
         </button>
 
         <div style="margin-top: 30px; border-top: 1px solid #333; padding-top: 10px;">
@@ -212,7 +232,7 @@
     </div>
 
     <div id="onlineMenu" class="screen-overlay">
-        <h1 style="color: #00ffff;">MODO ONLINE</h1>
+        <h1 style="color: #00ffff;">MODO CO-OP</h1>
         <p style="color: #aaa;">1. Tu ID (Comparte esto con tu amigo):</p>
         <div id="myIdDisplay" style="font-size: 24px; color: white; background: #333; padding: 10px; user-select: text; word-break: break-all;">Generando ID...</div>
         
@@ -224,7 +244,7 @@
         <p id="statusMsg" style="color: yellow; margin-top: 10px; min-height: 20px;"></p>
     </div>
 
-    <div id="credits">v17.0 Online + Fixed Crash - Hecho por Aguirre</div>
+    <div id="credits">v17.5 Co-op Update - Hecho por Aguirre</div>
 
     <div id="gameover" class="screen-overlay">
         <h1 style="margin-bottom: 20px;">BUSTED</h1>
@@ -242,18 +262,26 @@
         let mapWidth = 4000;
         let mapHeight = 4000;
         let selectedMode = localStorage.getItem('gta_control_mode') || null;
+        let myNickname = "Player";
 
-        // --- LÓGICA ONLINE (PeerJS) ---
+        // --- LÓGICA ONLINE CO-OP ---
         let peer = null;
         let conn = null;
         let isOnline = false;
+        let isHost = false; // El Host gestiona los enemigos
         let myId = null;
 
-        // El "fantasma" del otro jugador y sus policías
-        let rival = { x: -1000, y: -1000, angle: 0, active: false };
-        let rivalCops = [];
+        // El rival (amigo)
+        let rival = { x: -1000, y: -1000, angle: 0, active: false, dead: false, name: "RIVAL" };
+        let rivalBullets = [];
+        
+        // Estado Cooperativo
+        let coopCollisionCount = 0;
+        let lastCoopCollisionTime = 0;
+        let reviveTimer = 0; // Frames para revivir
 
         function openOnlineMenu() {
+            myNickname = document.getElementById('nicknameInput').value.trim() || "PLAYER";
             document.getElementById('mainMenu').style.display = 'none';
             document.getElementById('onlineMenu').style.display = 'block';
             initPeer(); 
@@ -266,9 +294,11 @@
                 myId = id;
                 document.getElementById('myIdDisplay').innerText = id;
                 document.getElementById('statusMsg').innerText = "Esperando conexión...";
+                isHost = true; // Por defecto, si tú abres y esperas, eres Host potencial
             });
 
             peer.on('connection', (c) => {
+                isHost = true; // Recibí conexión, soy el Host
                 setupConnection(c);
             });
             
@@ -283,6 +313,7 @@
             if (!friendId) return alert("Ingresa el ID de tu amigo");
             
             document.getElementById('statusMsg').innerText = "Conectando...";
+            isHost = false; // Yo me conecto, soy Cliente
             let c = peer.connect(friendId);
             setupConnection(c);
         }
@@ -293,34 +324,114 @@
             conn.on('open', () => {
                 document.getElementById('statusMsg').innerText = "¡CONECTADO! Iniciando juego...";
                 isOnline = true;
+                conn.send({ type: 'handshake', name: myNickname });
                 setTimeout(() => {
                     document.getElementById('onlineMenu').style.display = 'none';
-                    // Si no ha elegido modo, por defecto PC, pero permite que funcione si ya eligió antes
                     if(!selectedMode) selectedMode = 'pc'; 
                     startGame();
                 }, 1000);
             });
 
             conn.on('data', (data) => {
-                // 1. Actualizar al rival
+                // Handshake de nombres
+                if (data.type === 'handshake') {
+                    rival.name = data.name;
+                }
+
+                // Sincronización de Jugador
                 if (data.player) {
                     rival.x = data.player.x;
                     rival.y = data.player.y;
                     rival.angle = data.player.angle;
+                    rival.dead = data.player.dead;
                     rival.active = true;
                 }
-                // 2. Actualizar los policías del rival
-                if (data.cops) {
-                    rivalCops = data.cops;
+
+                // El cliente recibe datos del Host (Enemigos y Jefes)
+                if (!isHost) {
+                    if (data.cops) updatePoliceFromHost(data.cops);
+                    if (data.boss) updateBossFromHost(data.boss);
+                    if (data.twins) updateTwinsFromHost(data.twins);
+                    if (data.mapEvent) handleMapEvent(data.mapEvent);
+                }
+
+                // El Host recibe daño infligido por el cliente a los Jefes
+                if (isHost && data.damageReport) {
+                    applyDamageFromClient(data.damageReport);
                 }
             });
             
             conn.on('close', () => {
                 alert("El otro jugador se desconectó");
-                rival.active = false;
-                rivalCops = [];
+                location.reload();
             });
         }
+
+        function updatePoliceFromHost(copsData) {
+            // Reemplazo simple para visualización, el Host calcula colisiones reales
+            policeCars = copsData.map(d => {
+                let p = new Police(d.t, true); // true = ghost
+                p.x = d.x; p.y = d.y; p.angle = d.a; p.stunned = d.s;
+                return p;
+            });
+        }
+
+        function updateBossFromHost(bossData) {
+            if (!bossData) { boss = null; return; }
+            if (!boss) boss = new TankBoss(true); // true = ghost
+            boss.x = bossData.x;
+            boss.y = bossData.y;
+            boss.angle = bossData.angle;
+            boss.turretAngle = bossData.ta;
+            boss.health = bossData.hp;
+            boss.maxHealth = bossData.maxHp;
+            boss.enraged = bossData.enraged;
+        }
+
+        function updateTwinsFromHost(twinsData) {
+            if (!twinsData) { twinBosses = []; return; }
+            // Sincronizar array de gemelos
+            if (twinBosses.length !== twinsData.length) {
+                twinBosses = twinsData.map(t => new TwinBoss(t.side, true));
+            }
+            twinsData.forEach((tData, i) => {
+                if (twinBosses[i]) {
+                    twinBosses[i].x = tData.x;
+                    twinBosses[i].y = tData.y;
+                    twinBosses[i].angle = tData.a;
+                    twinBosses[i].health = tData.hp;
+                    twinBosses[i].rageMode = tData.rage;
+                }
+            });
+        }
+        
+        function handleMapEvent(evt) {
+            if (evt === 'destroyBuildings') {
+                destroyBuildings();
+                mapWidth = 1000; mapHeight = 1500;
+                gameState.bossMode = true;
+                showWarning("¡ALERTA DE TANQUE!");
+            }
+            if (evt === 'resetMap') {
+                 mapWidth = 4000; mapHeight = 4000; gameState.bossMode = false;
+            }
+            if (evt === 'twins') {
+                showWarning("¡GEMELOS ZZ!");
+                gameState.twinsActive = true;
+            }
+        }
+
+        function applyDamageFromClient(dmg) {
+            if (dmg.target === 'boss' && boss) {
+                boss.health -= dmg.amount;
+                checkBossDeath();
+            }
+            if (dmg.target === 'twin' && twinBosses[dmg.index]) {
+                twinBosses[dmg.index].health -= dmg.amount;
+                if (twinBosses[dmg.index].health <= 0) twinBosses[dmg.index].die();
+            }
+        }
+
         // ------------------------------
 
         const CONFIG = {
@@ -328,7 +439,7 @@
             turnSpeed: 0.08, 
             accel: 0.4, 
             maxSpeed: 8, 
-            grip: 0.9,     
+            grip: 0.9,      
             driftGrip: 0.04 
         };
 
@@ -356,11 +467,11 @@
 
         function selectModeAndStart(mode) {
             selectedMode = mode;
+            myNickname = document.getElementById('nicknameInput').value.trim() || "PLAYER";
             localStorage.setItem('gta_control_mode', mode);
             startGame();
         }
 
-        // FUNCIÓN FALTANTE QUE CAUSABA EL CRASH
         function showWarning(text) {
             const warningEl = document.getElementById('bossWarning');
             warningEl.innerText = text;
@@ -392,7 +503,7 @@
         });
         
         window.addEventListener('mousedown', e => { 
-            if (!gameState.running || gameState.over) return; 
+            if (!gameState.running || gameState.over || player.dead) return; 
             if (selectedMode === 'pc' && e.button === 0) player.shoot(); 
         });
 
@@ -406,33 +517,7 @@
                     if (cheatBuffer.length > 10) cheatBuffer = cheatBuffer.slice(-10); 
                     
                     if (cheatBuffer.endsWith("BOSS")) {
-                        if (gameState.starLevel < 5 && !gameState.bossMode) {
-                            gameState.starLevel = 5;
-                            const cheatMsg = document.getElementById('cheatActivated');
-                            cheatMsg.innerText = "TRUCO ACTIVADO: JEFE INVOCADO";
-                            cheatMsg.style.display = 'block';
-                            setTimeout(() => { cheatMsg.style.display = 'none'; }, 2000);
-                            cheatBuffer = ""; 
-                        }
-                    }
-                    if (cheatBuffer.endsWith("BOZZ")) {
-                         if (gameState.starLevel < 3) {
-                            gameState.starLevel = 3;
-                            const cheatMsg = document.getElementById('cheatActivated');
-                            cheatMsg.innerText = "TRUCO ACTIVADO: GEMELOS INVOCADOS";
-                            cheatMsg.style.display = 'block';
-                            setTimeout(() => { cheatMsg.style.display = 'none'; }, 2000);
-                            cheatBuffer = "";
-                        }
-                    }
-                    if (cheatBuffer.endsWith("GUN")) {
-                        player.ammo = Infinity;
-                        updateHUD();
-                        const cheatMsg = document.getElementById('cheatActivated');
-                        cheatMsg.innerText = "TRUCO ACTIVADO: BALAS INFINITAS";
-                        cheatMsg.style.display = 'block';
-                        setTimeout(() => { cheatMsg.style.display = 'none'; }, 2000);
-                        cheatBuffer = "";
+                         if(isHost) spawnBossCheat();
                     }
                 }
             }
@@ -441,6 +526,17 @@
             if (k === 'a' || k === 'arrowleft') keys.a = true;
             if (k === 'd' || k === 'arrowright') keys.d = true;
         });
+
+        function spawnBossCheat() {
+            if (gameState.starLevel < 5 && !gameState.bossMode) {
+                gameState.starLevel = 5;
+                const cheatMsg = document.getElementById('cheatActivated');
+                cheatMsg.innerText = "TRUCO: JEFE INVOCADO";
+                cheatMsg.style.display = 'block';
+                setTimeout(() => { cheatMsg.style.display = 'none'; }, 2000);
+                cheatBuffer = ""; 
+            }
+        }
 
         window.addEventListener('keyup', e => {
             const k = e.key.toLowerCase();
@@ -490,7 +586,7 @@
         });
 
         canvas.addEventListener('touchstart', e => {
-            if (!gameState.running || gameState.over) return;
+            if (!gameState.running || gameState.over || player.dead) return;
             if (selectedMode !== 'mobile') return;
             let touch = e.touches[0];
             const jRect = joystick.getBoundingClientRect();
@@ -525,8 +621,10 @@
                 this.hasShield = false; this.boostTimer = 0;
                 this.ammo = 0; this.immunityTimer = 0; this.speed = 0; 
                 this.prevRearLeft = null; this.prevRearRight = null;
+                this.dead = false; // Co-op muerte
             }
             shoot() {
+                if (this.dead) return;
                 if (this.ammo > 0 || this.ammo === Infinity) {
                     if (this.ammo !== Infinity) this.ammo--;
                     updateHUD(); 
@@ -538,6 +636,8 @@
                 }
             }
             update() {
+                if (this.dead) return; // Si está muerto no se mueve
+                
                 let intentSpeed = 0; 
                 let currentTurnSpeed = CONFIG.turnSpeed;
                 let currentGrip = CONFIG.grip;
@@ -642,14 +742,15 @@
         }
 
         class TwinBoss extends Entity {
-            constructor(side) {
+            constructor(side, ghost = false) {
                 super(0, 0, '#1a53ff'); 
                 this.side = side; 
-                this.health = 3;
+                this.ghost = ghost;
+                this.health = isOnline ? 6 : 3; // Doble vida en Co-op
                 this.rageMode = false;
                 this.ramCooldown = 180; 
                 this.radius = 22; 
-                this.spawn();
+                if(!this.ghost) this.spawn();
             }
 
             spawn() {
@@ -662,6 +763,16 @@
 
             update() {
                 if (this.health <= 0) return; 
+                if (this.ghost) return; // La lógica la lleva el host
+
+                // Target Logic: Closest player
+                let target = player;
+                if (isOnline && rival.active && !rival.dead) {
+                    let d1 = Math.hypot(player.x - this.x, player.y - this.y);
+                    let d2 = Math.hypot(rival.x - this.x, rival.y - this.y);
+                    if (d2 < d1 && !player.dead) target = rival;
+                    if (player.dead) target = rival;
+                }
 
                 let brother = twinBosses.find(t => t !== this && t.health > 0);
                 if (!brother && !this.rageMode) {
@@ -669,9 +780,9 @@
                 }
 
                 if (this.rageMode) {
-                    this.updateRage();
+                    this.updateRage(target);
                 } else {
-                    this.updateFlank();
+                    this.updateFlank(target);
                 }
 
                 if (this.x < 0 || this.x > mapWidth || this.y < 0 || this.y > mapHeight) {
@@ -691,7 +802,7 @@
 
             enterRage() {
                 this.rageMode = true;
-                this.health = 1; 
+                this.health = isOnline ? 2 : 1; 
                 this.color = '#00008b'; 
                 addShake(15);
             }
@@ -709,15 +820,16 @@
                 }
             }
 
-            updateFlank() {
-                let sideAngle = player.angle + (this.side === 'left' ? -1.2 : 1.2);
-                let targetX = player.x + Math.cos(sideAngle) * 110;
-                let targetY = player.y + Math.sin(sideAngle) * 110;
+            updateFlank(target) {
+                let sideAngle = target.angle || 0;
+                sideAngle += (this.side === 'left' ? -1.2 : 1.2);
+                let targetX = target.x + Math.cos(sideAngle) * 110;
+                let targetY = target.y + Math.sin(sideAngle) * 110;
 
                 this.ramCooldown--;
                 if (this.ramCooldown <= 0) {
-                    targetX = player.x; 
-                    targetY = player.y;
+                    targetX = target.x; 
+                    targetY = target.y;
                     if (this.ramCooldown < -60) this.ramCooldown = 300 + Math.random()*100; 
                 }
 
@@ -734,10 +846,11 @@
                 this.vy = Math.sin(this.angle) * speed;
             }
 
-            updateRage() {
+            updateRage(target) {
                 let frontDist = 180;
-                let targetX = player.x + Math.cos(player.angle) * frontDist;
-                let targetY = player.y + Math.sin(player.angle) * frontDist;
+                let targetAngleRef = target.angle || 0;
+                let targetX = target.x + Math.cos(targetAngleRef) * frontDist;
+                let targetY = target.y + Math.sin(targetAngleRef) * frontDist;
 
                 let dx = targetX - this.x;
                 let dy = targetY - this.y;
@@ -756,12 +869,13 @@
         }
 
         class TankBoss extends Entity {
-            constructor() {
+            constructor(ghost = false) {
                 super(0, 0, '#2d5a27'); 
-                this.spawn();
+                this.ghost = ghost;
+                if (!this.ghost) this.spawn();
                 this.radius = 40; 
-                this.health = 5;
-                this.maxHealth = 5;
+                this.maxHealth = isOnline ? 10 : 5; // Doble vida en co-op
+                this.health = this.maxHealth;
                 this.angle = 0;
                 this.turretAngle = 0;
                 this.shootTimer = 120;
@@ -776,10 +890,12 @@
                 if (this.y < 50) this.y = 50; if (this.y > mapHeight-50) this.y = mapHeight-50;
             }
             update() {
-                if (this.health <= 1 && !this.enraged) {
+                if (this.ghost) return;
+
+                if (this.health <= (this.maxHealth * 0.2) && !this.enraged) {
                     this.enraged = true;
                     this.color = '#ff0000'; 
-                    this.health = 5; 
+                    this.health = this.maxHealth; 
                     addShake(30);
                     for(let i=0; i<2; i++) {
                         let heavy = new Police('heavy');
@@ -792,7 +908,16 @@
                     }
                 }
 
-                let dx = player.x - this.x; let dy = player.y - this.y;
+                // Target Logic
+                let target = player;
+                if (isOnline && rival.active && !rival.dead) {
+                    let d1 = Math.hypot(player.x - this.x, player.y - this.y);
+                    let d2 = Math.hypot(rival.x - this.x, rival.y - this.y);
+                    if (d2 < d1 && !player.dead) target = rival;
+                    if (player.dead) target = rival;
+                }
+
+                let dx = target.x - this.x; let dy = target.y - this.y;
                 let targetAngle = Math.atan2(dy, dx);
                 this.angle += (targetAngle - this.angle) * 0.02;
                 this.x += Math.cos(this.angle) * 1.5; 
@@ -855,15 +980,17 @@
                 this.x1 = x1; this.y1 = y1; this.x2 = x2; this.y2 = y2; this.alpha = 1.0;
             }
             draw() {
-                ctx.save(); ctx.globalAlpha = this.alpha; ctx.strokeStyle = '#ff3333'; ctx.lineWidth = 3;
+                ctx.save(); ctx.globalAlpha = this.alpha; ctx.strokeStyle = '#ff3333'; ctx.lineWidth = 3; 
                 ctx.beginPath(); ctx.moveTo(this.x1, this.y1); ctx.lineTo(this.x2, this.y2); ctx.stroke(); ctx.restore();
             }
         }
 
         class Police extends Entity {
-            constructor(type) {
+            constructor(type, ghost = false) {
                 super(0, 0, '#ff3333');
-                this.type = type; this.spawn();
+                this.type = type; 
+                this.ghost = ghost;
+                if (!this.ghost) this.spawn();
                 if (this.type === 'interceptor') { this.color = '#33ccff'; this.speedFactor = 1.1; }
                 else if (this.type === 'heavy') { this.color = '#222'; this.radius = 20; this.speedFactor = 0.7; }
                 else { this.speedFactor = 1.0; }
@@ -879,9 +1006,23 @@
                 if (this.y < 0) this.y = 0; if (this.y > mapHeight) this.y = mapHeight;
             }
             update() {
+                if (this.ghost) return;
                 if (this.stunned > 0) { this.stunned--; return; }
-                let chaseX = player.x - this.x; let chaseY = player.y - this.y;
-                if (this.type === 'interceptor') { chaseX += player.vx * 60; chaseY += player.vy * 60; }
+
+                // Chase Closest
+                let target = player;
+                if (isOnline && rival.active && !rival.dead) {
+                    let d1 = Math.hypot(player.x - this.x, player.y - this.y);
+                    let d2 = Math.hypot(rival.x - this.x, rival.y - this.y);
+                    if (d2 < d1 && !player.dead) target = rival;
+                    if (player.dead) target = rival;
+                }
+
+                let chaseX = target.x - this.x; let chaseY = target.y - this.y;
+                if (this.type === 'interceptor') { 
+                    // Aproximación de predicción para el jugador local, para rival es solo follow
+                    if (target === player) { chaseX += player.vx * 60; chaseY += player.vy * 60; }
+                }
                 let distToTarget = Math.sqrt(chaseX*chaseX + chaseY*chaseY);
                 if (distToTarget > 0) { chaseX /= distToTarget; chaseY /= distToTarget; }
 
@@ -986,7 +1127,7 @@
         let particles = [];
         let skidMarks = []; 
         let bullets = [];
-        let laserTrails = [];
+        let laserTrails = []; 
         let empEffect = 0;
 
         function addShake(amount) { gameState.cameraShake = amount; }
@@ -1008,7 +1149,7 @@
                  let ox = Math.random() * (mapWidth - w - 40) + 20; 
                  let oy = Math.random() * (mapHeight - h - 40) + 20;
                  if (Math.abs(ox - mapWidth/2) > 300 || Math.abs(oy - mapHeight/2) > 300) {
-                     obstacles.push(new Obstacle(ox, oy, w, h));
+                      obstacles.push(new Obstacle(ox, oy, w, h));
                  }
             }
         }
@@ -1042,8 +1183,13 @@
             gameState.twinsDefeated = false;
             bossPowerupTimer = 0;
             
+            // Co-op Resets
+            coopCollisionCount = 0;
+            lastCoopCollisionTime = 0;
+            
             mapWidth = 4000;
             mapHeight = 4000;
+            if (isHost && isOnline && conn) conn.send({ mapEvent: 'resetMap' });
 
             player = new Player();
             policeCars = [];
@@ -1061,6 +1207,7 @@
             document.getElementById('gameover').style.display = 'none';
             document.getElementById('newRecord').style.display = 'none';
             document.getElementById('bossWarning').style.display = 'none';
+            document.getElementById('reviveUI').style.display = 'none';
             document.getElementById('ui').style.display = 'block';
             
             if (selectedMode === 'mobile') document.getElementById('mobile-controls').style.display = 'block';
@@ -1070,7 +1217,7 @@
             requestAnimationFrame(loop);
 
             updateHUD();
-            policeCars.push(new Police('normal'));
+            if (isHost || !isOnline) policeCars.push(new Police('normal'));
         }
 
         function updateHUD() {
@@ -1096,6 +1243,46 @@
             }
             document.getElementById('powerupsUI').innerHTML = pHTML;
         }
+        
+        function checkCoopCollision() {
+            if (!isOnline || !rival.active || player.dead || rival.dead) return;
+            
+            // Cooldown de 2 segundos entre choques
+            if (Date.now() - lastCoopCollisionTime < 2000) return;
+
+            let dist = Math.hypot(player.x - rival.x, player.y - rival.y);
+            if (dist < 40) { // Radio de colisión (20 + 20 aprox)
+                lastCoopCollisionTime = Date.now();
+                
+                if (coopCollisionCount === 0) {
+                    // 1er Choque: Explosión Aturdidora
+                    coopCollisionCount++;
+                    addShake(30);
+                    // Empuje simple
+                    let angle = Math.atan2(player.y - rival.y, player.x - rival.x);
+                    player.vx += Math.cos(angle) * 15; player.vy += Math.sin(angle) * 15;
+                    
+                    // Efecto Visual
+                    for(let i=0; i<30; i++) addParticle((player.x+rival.x)/2, (player.y+rival.y)/2, '#00ffff', 10);
+                    
+                    // Stun enemies
+                    policeCars.forEach(p => p.stunned = 300);
+                    
+                } else {
+                    // 2do Choque: Muerte Instantánea
+                    playerDie();
+                }
+            }
+        }
+
+        function playerDie() {
+            if (player.dead) return;
+            player.dead = true;
+            reviveTimer = 600; // 10 segundos a 60 FPS
+            addShake(20);
+            for(let k=0; k<20; k++) addParticle(player.x, player.y, player.color, 5);
+            document.getElementById('reviveUI').style.display = 'block';
+        }
 
         function loop(timestamp) {
             if (!gameState.running || gameState.over) return;
@@ -1105,8 +1292,18 @@
             if (elapsed < INTERVAL) return;
             lastTime = timestamp - (elapsed % INTERVAL);
 
-            let targetCamX = player.x - canvas.width / 2;
-            let targetCamY = player.y - canvas.height / 2;
+            // Manejo de Cámara
+            let camTargetX = player.x;
+            let camTargetY = player.y;
+
+            // Si está muerto, espectar al rival si está vivo
+            if (player.dead && isOnline && rival.active && !rival.dead) {
+                 camTargetX = rival.x;
+                 camTargetY = rival.y;
+            }
+
+            let targetCamX = camTargetX - canvas.width / 2;
+            let targetCamY = camTargetY - canvas.height / 2;
             camera.x += (targetCamX - camera.x) * 0.1;
             camera.y += (targetCamY - camera.y) * 0.1;
 
@@ -1122,6 +1319,7 @@
 
             ctx.translate(-camera.x, -camera.y);
 
+            // Render Grid
             ctx.strokeStyle = '#2a2a2a'; ctx.lineWidth = 2; ctx.beginPath();
             let startGridX = Math.floor(camera.x / 100) * 100;
             let startGridY = Math.floor(camera.y / 100) * 100;
@@ -1139,26 +1337,49 @@
             }
 
             ctx.strokeStyle = '#000000'; ctx.lineWidth = 15; ctx.strokeRect(0, 0, mapWidth, mapHeight);
+            
+            // --- LOGICA DEL JUEGO ---
 
-            gameState.score++;
+            if (!player.dead) gameState.score++;
+            
+            // Lógica de Revivir
+            if (player.dead) {
+                reviveTimer--;
+                document.getElementById('reviveTimerDisplay').innerText = Math.ceil(reviveTimer / 60);
+                
+                if (isOnline && rival.dead) {
+                    gameOver(); // Ambos muertos
+                } else if (reviveTimer <= 0) {
+                    // Revivir
+                    player.dead = false;
+                    player.x = rival.active ? rival.x : mapWidth/2;
+                    player.y = rival.active ? rival.y : mapHeight/2;
+                    player.hasShield = true; // Escudo al revivir
+                    player.immunityTimer = 180;
+                    document.getElementById('reviveUI').style.display = 'none';
+                }
+            }
+
+            checkCoopCollision();
             
             // --- ENVIAR DATOS ONLINE ---
             if (isOnline && conn && conn.open) {
-                let myCopsData = policeCars.map(cop => ({
-                    x: Math.round(cop.x),
-                    y: Math.round(cop.y),
-                    a: cop.angle,
-                    t: cop.type
-                }));
+                // Solo el Host envía datos de enemigos
+                let packet = {
+                    player: { x: player.x, y: player.y, angle: player.angle, dead: player.dead }
+                };
 
-                conn.send({
-                    player: { x: player.x, y: player.y, angle: player.angle },
-                    cops: myCopsData
-                });
+                if (isHost) {
+                     packet.cops = policeCars.map(cop => ({ x: Math.round(cop.x), y: Math.round(cop.y), a: cop.angle, t: cop.type, s: cop.stunned }));
+                     if (boss) packet.boss = { x: boss.x, y: boss.y, angle: boss.angle, ta: boss.turretAngle, hp: boss.health, maxHp: boss.maxHealth, enraged: boss.enraged };
+                     if (gameState.twinsActive) packet.twins = twinBosses.map(t => ({ x: t.x, y: t.y, a: t.angle, hp: t.health, rage: t.rageMode, side: t.side }));
+                }
+
+                conn.send(packet);
             }
 
-            // BOSS TANK SPAWN (Nivel 5)
-            if (gameState.starLevel === 5 && !boss && !gameState.bossMode) {
+            // BOSS TANK SPAWN (Nivel 5) - Solo Host
+            if (isHost && gameState.starLevel === 5 && !boss && !gameState.bossMode) {
                 gameState.bossMode = true;
                 mapWidth = 1000;
                 mapHeight = 1500;
@@ -1166,6 +1387,8 @@
                 policeCars = [];
                 powerups = []; 
                 destroyBuildings(); 
+                if (conn) conn.send({ mapEvent: 'destroyBuildings' });
+
                 if(player.x > mapWidth) player.x = mapWidth/2;
                 if(player.y > mapHeight) player.y = mapHeight/2;
                 
@@ -1174,21 +1397,24 @@
                 setTimeout(() => { boss = new TankBoss(); }, 2000);
             }
 
-            // TWINS SPAWN (Nivel 3)
-            if (gameState.starLevel === 3 && !gameState.twinsDefeated && !gameState.twinsActive) {
+            // TWINS SPAWN (Nivel 3) - Solo Host
+            if (isHost && gameState.starLevel === 3 && !gameState.twinsDefeated && !gameState.twinsActive) {
                 gameState.twinsActive = true;
-                showWarning("¡GEMELOS ZZ!"); 
+                showWarning("¡GEMELOS ZZ!");
+                if(conn) conn.send({ mapEvent: 'twins' });
                 twinBosses.push(new TwinBoss('left'));
                 twinBosses.push(new TwinBoss('right'));
             }
 
-            if (!gameState.bossMode && gameState.score % 900 === 0 && gameState.starLevel < 5) {
+            if (!gameState.bossMode && gameState.score % 900 === 0 && gameState.starLevel < 5 && !player.dead) {
                 if (gameState.starLevel === 3 && !gameState.twinsDefeated) { } 
                 else { gameState.starLevel++; addShake(20); }
             }
 
-            if (!gameState.bossMode) {
+            // Spawn Logic (Solo Host)
+            if (isHost && !gameState.bossMode) {
                 let maxCops = 1 + gameState.starLevel * 1.5;
+                if (isOnline) maxCops *= 1.5; // Más policías en co-op
                 if (gameState.starLevel === 6) maxCops = 15; 
                 if (gameState.twinsActive) maxCops = 3;
 
@@ -1200,7 +1426,7 @@
                     policeCars.push(new Police(type));
                 }
                 if (Math.random() < 0.005 && powerups.length < 5) powerups.push(new PowerUp());
-            } else {
+            } else if (isHost) {
                 bossPowerupTimer++;
                 if (bossPowerupTimer >= 300) { 
                     bossPowerupTimer = 0;
@@ -1214,13 +1440,16 @@
 
             if (gameState.twinsActive) {
                 twinBosses.forEach(t => t.update());
+                // Chequeo de colisión local
                 twinBosses.forEach(t => {
-                    if (t.health > 0) {
+                    if (t.health > 0 && !player.dead) {
                         let dx = player.x - t.x; let dy = player.y - t.y;
                         if (Math.sqrt(dx*dx + dy*dy) < player.radius + t.radius) {
                             if (player.hasShield) {
-                                player.hasShield = false; t.x -= t.vx * 10; t.y -= t.vy * 10; addShake(20);
-                            } else { gameOver(); }
+                                player.hasShield = false; 
+                                if(isHost) { t.x -= t.vx * 10; t.y -= t.vy * 10; } // Solo host mueve
+                                addShake(20);
+                            } else { playerDie(); }
                         }
                     }
                 });
@@ -1228,37 +1457,63 @@
 
             if (boss) {
                 boss.update();
-                let dx = player.x - boss.x; let dy = player.y - boss.y;
-                if (Math.sqrt(dx*dx + dy*dy) < player.radius + boss.radius) gameOver();
+                if (!player.dead) {
+                    let dx = player.x - boss.x; let dy = player.y - boss.y;
+                    if (Math.sqrt(dx*dx + dy*dy) < player.radius + boss.radius) playerDie();
+                }
             }
 
+            // Bullet Logic
             for (let i = bullets.length - 1; i >= 0; i--) {
                 let b = bullets[i];
                 b.update();
                 if (b.dead || b.life <= 0) { bullets.splice(i, 1); continue; }
+                
+                // Colisión con Edificios
                 obstacles.forEach(obs => {
                     if (checkRectCollide({x: b.x, y: b.y, radius: 5}, obs)) {
                         b.dead = true; addParticle(b.x, b.y, '#fff', 3);
                     }
                 });
+
+                // Colisión con Policías (El cliente solo simula efecto, el Host mata de verdad si sincronizáramos ID, 
+                // pero para arcade simple, el cliente puede "matar" localmente y el host sobrescribe en el siguiente frame o viceversa.
+                // Para consistencia: El cliente envia "Daño" al boss, pero mata policías localmente (solo visual en cliente si no es host))
+                
+                // Haremos que SI es host, calcule colisiones normales.
+                // SI NO es host, calcule colisiones, pero no elimine del array global, solo visual.
+                // Pero como el array se sobrescribe cada frame por el Host... 
+                
+                // Solución Arcade: Cliente detecta hit -> Muestra partícula. Host detecta hit -> Mata.
+                // Como las balas del cliente NO existen en el Host (no se envían por red para ahorrar), el Host no sabe que el cliente disparó.
+                // FIX: Cliente calcula sus balas contra enemigos recibidos del Host. Si acierta, envía señal de "Kill/Hit" al Host.
+                // Simplificación: Cliente mata localmente "visual". Host no se entera. -> Desincronización.
+                // FIX REAL: Cliente envía balas al Host? No.
+                // FIX CO-OP SIMPLE: Cliente dispara al boss (envía daño). Cliente dispara a policía -> Policía se aturde localmente (el host sobrescribe el estado aturdido).
+                
+                // Hit Logic
                 for (let p of policeCars) {
                     let dx = b.x - p.x; let dy = b.y - p.y;
                     if (Math.sqrt(dx*dx + dy*dy) < p.radius + 10) {
                         b.dead = true;
-                        let stunTime = Math.floor(Math.random() * (300 - 120 + 1)) + 120;
-                        p.stunned = stunTime;
+                        if (isHost) {
+                            let stunTime = Math.floor(Math.random() * (300 - 120 + 1)) + 120;
+                            p.stunned = stunTime;
+                        }
                         for(let k=0; k<8; k++) addParticle(p.x, p.y, '#ffaa00', 4);
                         break;
                     }
                 }
                 
                 if (gameState.twinsActive) {
-                    twinBosses.forEach(t => {
+                    twinBosses.forEach((t, tIndex) => {
                         if (t.health > 0) {
                             let dx = b.x - t.x; let dy = b.y - t.y;
                             if (Math.sqrt(dx*dx + dy*dy) < t.radius + 10) {
-                                b.dead = true; t.health--; for(let k=0; k<5; k++) addParticle(t.x, t.y, '#fff', 3);
-                                if (t.health <= 0) t.die();
+                                b.dead = true; 
+                                for(let k=0; k<5; k++) addParticle(t.x, t.y, '#fff', 3);
+                                if (isHost) { t.health--; if(t.health<=0) t.die(); }
+                                else if (conn) { conn.send({ damageReport: { target: 'twin', index: tIndex, amount: 1 } }); }
                             }
                         }
                     });
@@ -1267,12 +1522,24 @@
                 if (boss) {
                     let dx = b.x - boss.x; let dy = b.y - boss.y;
                     if (Math.sqrt(dx*dx + dy*dy) < boss.radius + 10) {
-                        b.dead = true; boss.health--; for(let k=0; k<10; k++) addParticle(b.x, b.y, '#fff', 5);
-                        if (boss.health <= 0) {
-                            for(let k=0; k<50; k++) addParticle(boss.x, boss.y, '#ffaa00', 8);
-                            addShake(50); boss = null; gameState.bossMode = false; gameState.starLevel = 6; mapWidth = 4000; mapHeight = 4000;
+                        b.dead = true; 
+                        for(let k=0; k<10; k++) addParticle(b.x, b.y, '#fff', 5);
+                        
+                        if (isHost) {
+                            boss.health--; 
+                            checkBossDeath();
+                        } else if (conn) {
+                            conn.send({ damageReport: { target: 'boss', amount: 1 } });
                         }
                     }
+                }
+            }
+            
+            function checkBossDeath() {
+                if (boss && boss.health <= 0) {
+                    for(let k=0; k<50; k++) addParticle(boss.x, boss.y, '#ffaa00', 8);
+                    addShake(50); boss = null; gameState.bossMode = false; gameState.starLevel = 6; mapWidth = 4000; mapHeight = 4000;
+                    if (isHost && conn) conn.send({ mapEvent: 'resetMap' }); // Avisar al cliente
                 }
             }
 
@@ -1280,15 +1547,17 @@
                 let b = bossBullets[i];
                 b.update();
                 if (b.life <= 0) { bossBullets.splice(i, 1); continue; }
+                if (player.dead) continue;
+
                 let dx = player.x - b.x; let dy = player.y - b.y;
                 if (Math.sqrt(dx*dx + dy*dy) < player.radius + b.radius) {
                     if (player.hasShield) { player.hasShield = false; bossBullets.splice(i, 1); addShake(20); } 
-                    else if (player.immunityTimer <= 0) { gameOver(); }
+                    else if (player.immunityTimer <= 0) { playerDie(); }
                 }
             }
 
             obstacles.forEach(obs => {
-                if (checkRectCollide(player, obs)) {
+                if (!player.dead && checkRectCollide(player, obs)) {
                     player.x -= player.vx * 1.5; player.y -= player.vy * 1.5;
                     player.speed *= -0.5; addShake(10); addParticle(player.x, player.y, '#fff', 2);
                 }
@@ -1297,30 +1566,29 @@
             for (let i = policeCars.length - 1; i >= 0; i--) {
                 let cop = policeCars[i];
                 cop.update();
-                if (selectedMode === 'mobile') {
-                    let dPlayer = Math.sqrt(Math.pow(cop.x-player.x, 2) + Math.pow(cop.y-player.y, 2));
-                    if (dPlayer > 3000) { policeCars.splice(i, 1); continue; }
-                }
-                obstacles.forEach(obs => { if (checkRectCollide(cop, obs)) { cop.x -= cop.vx * 2; cop.y -= cop.vy * 2; cop.stunned = 60; } });
-                let dx = player.x - cop.x; let dy = player.y - cop.y;
-                let dist = Math.sqrt(dx*dx + dy*dy);
-                if (dist < (player.radius + cop.radius)) {
-                    if (player.immunityTimer > 0) { cop.x -= (player.x - cop.x)/dist * 2; cop.y -= (player.y - cop.y)/dist * 2; }
-                    else if (player.hasShield) {
-                        player.hasShield = false; player.immunityTimer = 120; 
-                        addShake(20); cop.stunned = 120; cop.x -= cop.vx * 5; cop.y -= cop.vy * 5;
-                        for(let k=0; k<20; k++) addParticle(player.x, player.y, '#33ff33', 5);
-                        updateHUD();
-                    } else { gameOver(); }
+                
+                if (!player.dead) {
+                    let dx = player.x - cop.x; let dy = player.y - cop.y;
+                    let dist = Math.sqrt(dx*dx + dy*dy);
+                    if (dist < (player.radius + cop.radius)) {
+                        if (player.immunityTimer > 0) { cop.x -= (player.x - cop.x)/dist * 2; cop.y -= (player.y - cop.y)/dist * 2; }
+                        else if (player.hasShield) {
+                            player.hasShield = false; player.immunityTimer = 120; 
+                            addShake(20); 
+                            if(isHost) { cop.stunned = 120; cop.x -= cop.vx * 5; cop.y -= cop.vy * 5; } // Solo host afecta físicas reales
+                            for(let k=0; k<20; k++) addParticle(player.x, player.y, '#33ff33', 5);
+                            updateHUD();
+                        } else { playerDie(); }
+                    }
                 }
             }
 
             for (let i = powerups.length - 1; i >= 0; i--) {
                 let p = powerups[i];
                 let dx = player.x - p.x; let dy = player.y - p.y;
-                if (Math.sqrt(dx*dx + dy*dy) < player.radius + 15) {
+                if (!player.dead && Math.sqrt(dx*dx + dy*dy) < player.radius + 15) {
                     if (p.type === 0) player.boostTimer = 180;
-                    if (p.type === 1) { empEffect = 30; policeCars.forEach(c => c.stunned = 240); }
+                    if (p.type === 1) { empEffect = 30; if(isHost) policeCars.forEach(c => c.stunned = 240); }
                     if (p.type === 2) player.hasShield = true;
                     if (p.type === 3) { if (player.ammo !== Infinity) player.ammo = 3; } 
                     powerups.splice(i, 1);
@@ -1353,26 +1621,16 @@
                 });
             }
 
-            drawCar(player.x, player.y, player.angle, player.color, false, player.hasShield, 'normal', player.immunityTimer);
+            // DIBUJAR JUGADOR LOCAL
+            if (!player.dead) {
+                drawCar(player.x, player.y, player.angle, player.color, false, player.hasShield, 'normal', player.immunityTimer);
+                drawNickname(player.x, player.y, myNickname);
+            }
 
             // DIBUJAR RIVAL ONLINE
-            if (isOnline && rival.active) {
+            if (isOnline && rival.active && !rival.dead) {
                 drawCar(rival.x, rival.y, rival.angle, '#bd00ff', false, false, 'normal');
-                ctx.save();
-                ctx.translate(rival.x, rival.y);
-                ctx.fillStyle = 'white'; ctx.font = '12px Arial'; ctx.textAlign = 'center';
-                ctx.fillText("RIVAL", 0, -30);
-                ctx.restore();
-
-                // Dibujar Policías Fantasma del Rival
-                ctx.globalAlpha = 0.5;
-                rivalCops.forEach(rc => {
-                    let cColor = '#ff3333';
-                    if (rc.t === 'interceptor') cColor = '#33ccff';
-                    if (rc.t === 'heavy') cColor = '#222';
-                    drawCar(rc.x, rc.y, rc.a, cColor, true, false, rc.t);
-                });
-                ctx.globalAlpha = 1.0;
+                drawNickname(rival.x, rival.y, rival.name);
             }
 
             policeCars.forEach(cop => {
@@ -1385,6 +1643,15 @@
 
             if (empEffect > 0) { ctx.fillStyle = `rgba(0, 255, 255, ${empEffect / 100})`; ctx.fillRect(camera.x, camera.y, canvas.width, canvas.height); }
 
+            ctx.restore();
+        }
+
+        function drawNickname(x, y, name) {
+            ctx.save();
+            ctx.translate(x, y);
+            ctx.fillStyle = 'white'; ctx.font = '12px Arial'; ctx.textAlign = 'center';
+            ctx.shadowColor = 'black'; ctx.shadowBlur = 2;
+            ctx.fillText(name, 0, -25);
             ctx.restore();
         }
 
@@ -1430,6 +1697,7 @@
             document.getElementById('ui').style.display = 'none';
             document.getElementById('mobile-controls').style.display = 'none'; 
             document.getElementById('gameover').style.display = 'block';
+            document.getElementById('reviveUI').style.display = 'none';
         }
 
         ctx.fillStyle = '#1a1a1a'; ctx.fillRect(0,0,canvas.width, canvas.height);
