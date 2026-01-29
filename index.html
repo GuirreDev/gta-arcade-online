@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>GTA Arcade - Immunity Update</title>
+    <title>GTA Arcade - Co-op Sync Update</title>
     <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Black+Ops+One&display=swap');
@@ -244,7 +244,7 @@
         <p id="statusMsg" style="color: yellow; margin-top: 10px; min-height: 20px;"></p>
     </div>
 
-    <div id="credits">v19.0 Immortality + Synced Crash - Hecho por Aguirre</div>
+    <div id="credits">v20.0 Co-op Sync + Fatal Crash Menu - Hecho por Aguirre</div>
 
     <div id="gameover" class="screen-overlay">
         <h1 style="margin-bottom: 20px;">BUSTED</h1>
@@ -335,9 +335,14 @@
                     rival.name = data.name;
                 }
 
-                // Si recibo orden de muerte por choque, muero
-                if (data.type === 'collisionKill') {
-                    playerDie();
+                // Sincronización de Fatal Crash
+                if (data.type === 'fatalCrash') {
+                    triggerFatalCrash();
+                }
+
+                // Reclamación de Powerups del cliente
+                if (isHost && data.type === 'claimPowerup') {
+                    powerups.splice(data.index, 1); // El host elimina el powerup reclamado
                 }
 
                 if (data.player) {
@@ -348,10 +353,17 @@
                     rival.active = true;
                 }
 
+                // Sincronización de Estadísticas (Score y Stars) - AMBOS LADOS
+                if (data.stats) {
+                    gameState.score = Math.max(gameState.score, data.stats.score);
+                    gameState.starLevel = Math.max(gameState.starLevel, data.stats.stars);
+                }
+
                 if (!isHost) {
                     if (data.cops) updatePoliceFromHost(data.cops);
                     if (data.boss) updateBossFromHost(data.boss);
                     if (data.twins) updateTwinsFromHost(data.twins);
+                    if (data.powerups) updatePowerupsFromHost(data.powerups);
                     if (data.mapEvent) handleMapEvent(data.mapEvent);
                 }
 
@@ -370,6 +382,15 @@
             policeCars = copsData.map(d => {
                 let p = new Police(d.t, true); 
                 p.x = d.x; p.y = d.y; p.angle = d.a; p.stunned = d.s;
+                return p;
+            });
+        }
+
+        function updatePowerupsFromHost(pData) {
+            // El cliente recibe la lista de powerups para renderizar
+            powerups = pData.map(d => {
+                let p = new PowerUp(); 
+                p.x = d.x; p.y = d.y; p.type = d.type; p.color = d.color;
                 return p;
             });
         }
@@ -1279,11 +1300,24 @@
                     policeCars.forEach(p => p.stunned = 300);
                     
                 } else {
-                    // 2do Choque Mortal: Mato a ambos
-                    playerDie(); 
-                    if (isOnline && conn && conn.open) conn.send({ type: 'collisionKill' });
+                    // 2do Choque Mortal: Mato a ambos y mando al menú
+                    triggerFatalCrash(); 
+                    if (isOnline && conn && conn.open) conn.send({ type: 'fatalCrash' });
                 }
             }
+        }
+
+        function triggerFatalCrash() {
+            gameState.running = false;
+            document.getElementById('ui').style.display = 'none';
+            const go = document.getElementById('gameover');
+            go.style.display = 'block';
+            go.innerHTML = '<h1 style="color:red">CRASH FATAL</h1><p>AMBOS JUGADORES ELIMINADOS</p>';
+            
+            // Auto menú en 3 segundos
+            setTimeout(() => {
+                location.reload();
+            }, 3000);
         }
 
         function playerDie() {
@@ -1380,11 +1414,15 @@
             
             if (isOnline && conn && conn.open) {
                 let packet = {
-                    player: { x: player.x, y: player.y, angle: player.angle, dead: player.dead }
+                    player: { x: player.x, y: player.y, angle: player.angle, dead: player.dead },
+                    stats: { score: gameState.score, stars: gameState.starLevel }
                 };
 
                 if (isHost) {
                      packet.cops = policeCars.map(cop => ({ x: Math.round(cop.x), y: Math.round(cop.y), a: cop.angle, t: cop.type, s: cop.stunned }));
+                     // Envío de Powerups para que el cliente los vea
+                     packet.powerups = powerups.map(p => ({ x: Math.round(p.x), y: Math.round(p.y), type: p.type, color: p.color }));
+                     
                      if (boss) packet.boss = { x: boss.x, y: boss.y, angle: boss.angle, ta: boss.turretAngle, hp: boss.health, maxHp: boss.maxHealth, enraged: boss.enraged };
                      if (gameState.twinsActive) packet.twins = twinBosses.map(t => ({ x: t.x, y: t.y, a: t.angle, hp: t.health, rage: t.rageMode, side: t.side }));
                 }
@@ -1587,7 +1625,14 @@
                     if (p.type === 1) { empEffect = 30; if(isHost) policeCars.forEach(c => c.stunned = 240); }
                     if (p.type === 2) player.hasShield = true;
                     if (p.type === 3) { if (player.ammo !== Infinity) player.ammo = 3; } 
-                    powerups.splice(i, 1);
+                    
+                    // Si soy Host, lo elimino. Si soy cliente, le digo al host que lo elimine
+                    if (isHost) {
+                        powerups.splice(i, 1);
+                    } else if (conn) {
+                        conn.send({ type: 'claimPowerup', index: i });
+                        powerups.splice(i, 1); // Lo borro localmente para feedback instantáneo
+                    }
                     updateHUD(); 
                 }
             }
