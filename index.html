@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>GTA Arcade - Co-op Exclusive Revive</title>
+    <title>GTA Arcade - Fixed Singleplayer</title>
     <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Black+Ops+One&display=swap');
@@ -244,7 +244,7 @@
         <p id="statusMsg" style="color: yellow; margin-top: 10px; min-height: 20px;"></p>
     </div>
 
-    <div id="credits">v17.6 Co-op Exclusive Revive - Hecho por Aguirre</div>
+    <div id="credits">v18.0 Singleplayer Fixed + Cheats - Hecho por Aguirre</div>
 
     <div id="gameover" class="screen-overlay">
         <h1 style="margin-bottom: 20px;">BUSTED</h1>
@@ -268,7 +268,8 @@
         let peer = null;
         let conn = null;
         let isOnline = false;
-        let isHost = false; // El Host gestiona los enemigos
+        // CORRECCIÓN IMPORTANTE: Por defecto eres el Host (Singleplayer). Solo cambias a falso si te conectas a otro.
+        let isHost = true; 
         let myId = null;
 
         // El rival (amigo)
@@ -294,7 +295,7 @@
                 myId = id;
                 document.getElementById('myIdDisplay').innerText = id;
                 document.getElementById('statusMsg').innerText = "Esperando conexión...";
-                isHost = true; // Por defecto, si tú abres y esperas, eres Host potencial
+                isHost = true; // Si yo abro el peer y espero, soy Host
             });
 
             peer.on('connection', (c) => {
@@ -313,7 +314,7 @@
             if (!friendId) return alert("Ingresa el ID de tu amigo");
             
             document.getElementById('statusMsg').innerText = "Conectando...";
-            isHost = false; // Yo me conecto, soy Cliente
+            isHost = false; // IMPORTANTE: Aquí cedo el control y me vuelvo cliente
             let c = peer.connect(friendId);
             setupConnection(c);
         }
@@ -368,7 +369,6 @@
         }
 
         function updatePoliceFromHost(copsData) {
-            // Reemplazo simple para visualización, el Host calcula colisiones reales
             policeCars = copsData.map(d => {
                 let p = new Police(d.t, true); // true = ghost
                 p.x = d.x; p.y = d.y; p.angle = d.a; p.stunned = d.s;
@@ -390,7 +390,6 @@
 
         function updateTwinsFromHost(twinsData) {
             if (!twinsData) { twinBosses = []; return; }
-            // Sincronizar array de gemelos
             if (twinBosses.length !== twinsData.length) {
                 twinBosses = twinsData.map(t => new TwinBoss(t.side, true));
             }
@@ -516,8 +515,18 @@
                     cheatBuffer += k.toUpperCase();
                     if (cheatBuffer.length > 10) cheatBuffer = cheatBuffer.slice(-10); 
                     
+                    // CORRECCIÓN: Los trucos funcionan si eres host (o singleplayer)
                     if (cheatBuffer.endsWith("BOSS")) {
                          if(isHost) spawnBossCheat();
+                    }
+                    if (cheatBuffer.endsWith("BOZZ")) {
+                         if(isHost) spawnTwinsCheat();
+                    }
+                    if (cheatBuffer.endsWith("GUN")) {
+                         player.ammo = Infinity;
+                         updateHUD();
+                         showCheatText("BALAS INFINITAS");
+                         cheatBuffer = "";
                     }
                 }
             }
@@ -527,14 +536,26 @@
             if (k === 'd' || k === 'arrowright') keys.d = true;
         });
 
+        function showCheatText(text) {
+            const cheatMsg = document.getElementById('cheatActivated');
+            cheatMsg.innerText = "TRUCO: " + text;
+            cheatMsg.style.display = 'block';
+            setTimeout(() => { cheatMsg.style.display = 'none'; }, 2000);
+        }
+
         function spawnBossCheat() {
             if (gameState.starLevel < 5 && !gameState.bossMode) {
                 gameState.starLevel = 5;
-                const cheatMsg = document.getElementById('cheatActivated');
-                cheatMsg.innerText = "TRUCO: JEFE INVOCADO";
-                cheatMsg.style.display = 'block';
-                setTimeout(() => { cheatMsg.style.display = 'none'; }, 2000);
+                showCheatText("JEFE INVOCADO");
                 cheatBuffer = ""; 
+            }
+        }
+        
+        function spawnTwinsCheat() {
+            if (gameState.starLevel < 3) {
+                gameState.starLevel = 3;
+                showCheatText("GEMELOS INVOCADOS");
+                cheatBuffer = "";
             }
         }
 
@@ -621,7 +642,7 @@
                 this.hasShield = false; this.boostTimer = 0;
                 this.ammo = 0; this.immunityTimer = 0; this.speed = 0; 
                 this.prevRearLeft = null; this.prevRearRight = null;
-                this.dead = false; // Co-op muerte
+                this.dead = false; 
             }
             shoot() {
                 if (this.dead) return;
@@ -636,7 +657,7 @@
                 }
             }
             update() {
-                if (this.dead) return; // Si está muerto no se mueve
+                if (this.dead) return; 
                 
                 let intentSpeed = 0; 
                 let currentTurnSpeed = CONFIG.turnSpeed;
@@ -746,7 +767,7 @@
                 super(0, 0, '#1a53ff'); 
                 this.side = side; 
                 this.ghost = ghost;
-                this.health = isOnline ? 6 : 3; // Doble vida en Co-op
+                this.health = isOnline ? 6 : 3; 
                 this.rageMode = false;
                 this.ramCooldown = 180; 
                 this.radius = 22; 
@@ -763,9 +784,8 @@
 
             update() {
                 if (this.health <= 0) return; 
-                if (this.ghost) return; // La lógica la lleva el host
+                if (this.ghost) return; 
 
-                // Target Logic: Closest player
                 let target = player;
                 if (isOnline && rival.active && !rival.dead) {
                     let d1 = Math.hypot(player.x - this.x, player.y - this.y);
@@ -874,7 +894,7 @@
                 this.ghost = ghost;
                 if (!this.ghost) this.spawn();
                 this.radius = 40; 
-                this.maxHealth = isOnline ? 10 : 5; // Doble vida en co-op
+                this.maxHealth = isOnline ? 10 : 5; 
                 this.health = this.maxHealth;
                 this.angle = 0;
                 this.turretAngle = 0;
@@ -908,7 +928,6 @@
                     }
                 }
 
-                // Target Logic
                 let target = player;
                 if (isOnline && rival.active && !rival.dead) {
                     let d1 = Math.hypot(player.x - this.x, player.y - this.y);
@@ -1020,7 +1039,6 @@
 
                 let chaseX = target.x - this.x; let chaseY = target.y - this.y;
                 if (this.type === 'interceptor') { 
-                    // Aproximación de predicción para el jugador local, para rival es solo follow
                     if (target === player) { chaseX += player.vx * 60; chaseY += player.vy * 60; }
                 }
                 let distToTarget = Math.sqrt(chaseX*chaseX + chaseY*chaseY);
@@ -1217,7 +1235,7 @@
             requestAnimationFrame(loop);
 
             updateHUD();
-            if (isHost || !isOnline) policeCars.push(new Police('normal'));
+            if (isHost) policeCars.push(new Police('normal'));
         }
 
         function updateHUD() {
