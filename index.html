@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>GTA Arcade - Co-op Edition</title>
+    <title>GTA Arcade - Co-op Exclusive Revive</title>
     <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Black+Ops+One&display=swap');
@@ -244,7 +244,7 @@
         <p id="statusMsg" style="color: yellow; margin-top: 10px; min-height: 20px;"></p>
     </div>
 
-    <div id="credits">v17.5 Co-op Update - Hecho por Aguirre</div>
+    <div id="credits">v17.6 Co-op Exclusive Revive - Hecho por Aguirre</div>
 
     <div id="gameover" class="screen-overlay">
         <h1 style="margin-bottom: 20px;">BUSTED</h1>
@@ -1277,6 +1277,16 @@
 
         function playerDie() {
             if (player.dead) return;
+
+            // --- LÓGICA DE MUERTE SINGLEPLAYER ---
+            if (!isOnline) {
+                 for(let k=0; k<20; k++) addParticle(player.x, player.y, player.color, 5);
+                 addShake(20);
+                 gameOver();
+                 return;
+            }
+
+            // --- LÓGICA DE MUERTE CO-OP ---
             player.dead = true;
             reviveTimer = 600; // 10 segundos a 60 FPS
             addShake(20);
@@ -1439,7 +1449,11 @@
             player.update();
 
             if (gameState.twinsActive) {
-                twinBosses.forEach(t => t.update());
+                twinBosses.forEach(t => {
+                    if (t.health > 0) {
+                        t.update(); // Mover lógica fuera del check si es necesario
+                    }
+                });
                 // Chequeo de colisión local
                 twinBosses.forEach(t => {
                     if (t.health > 0 && !player.dead) {
@@ -1476,21 +1490,6 @@
                     }
                 });
 
-                // Colisión con Policías (El cliente solo simula efecto, el Host mata de verdad si sincronizáramos ID, 
-                // pero para arcade simple, el cliente puede "matar" localmente y el host sobrescribe en el siguiente frame o viceversa.
-                // Para consistencia: El cliente envia "Daño" al boss, pero mata policías localmente (solo visual en cliente si no es host))
-                
-                // Haremos que SI es host, calcule colisiones normales.
-                // SI NO es host, calcule colisiones, pero no elimine del array global, solo visual.
-                // Pero como el array se sobrescribe cada frame por el Host... 
-                
-                // Solución Arcade: Cliente detecta hit -> Muestra partícula. Host detecta hit -> Mata.
-                // Como las balas del cliente NO existen en el Host (no se envían por red para ahorrar), el Host no sabe que el cliente disparó.
-                // FIX: Cliente calcula sus balas contra enemigos recibidos del Host. Si acierta, envía señal de "Kill/Hit" al Host.
-                // Simplificación: Cliente mata localmente "visual". Host no se entera. -> Desincronización.
-                // FIX REAL: Cliente envía balas al Host? No.
-                // FIX CO-OP SIMPLE: Cliente dispara al boss (envía daño). Cliente dispara a policía -> Policía se aturde localmente (el host sobrescribe el estado aturdido).
-                
                 // Hit Logic
                 for (let p of policeCars) {
                     let dx = b.x - p.x; let dy = b.y - p.y;
